@@ -1,5 +1,7 @@
 package ru.practicum.ewm.event;
 
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
@@ -23,6 +25,7 @@ public final class EventSpecifications {
 			LocalDateTime rangeEnd,
 			boolean onlyAvailable) {
 		return (root, query, cb) -> {
+			fetchRelations(root, query);
 			List<Predicate> predicates = new ArrayList<>();
 			predicates.add(cb.equal(root.get("state"), EventState.PUBLISHED));
 			if (text != null && !text.isBlank()) {
@@ -65,6 +68,7 @@ public final class EventSpecifications {
 			LocalDateTime rangeStart,
 			LocalDateTime rangeEnd) {
 		return (root, query, cb) -> {
+			fetchRelations(root, query);
 			List<Predicate> predicates = new ArrayList<>();
 			if (users != null && !users.isEmpty()) {
 				predicates.add(root.get("initiator").get("id").in(users));
@@ -83,5 +87,14 @@ public final class EventSpecifications {
 			}
 			return cb.and(predicates.toArray(Predicate[]::new));
 		};
+	}
+
+	private static void fetchRelations(Root<Event> root, CriteriaQuery<?> query) {
+		if (query == null || query.getResultType() != Event.class) {
+			return;
+		}
+		root.fetch("category", JoinType.INNER);
+		root.fetch("initiator", JoinType.INNER);
+		query.distinct(true);
 	}
 }

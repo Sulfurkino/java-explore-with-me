@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,6 +16,7 @@ import ru.practicum.ewm.event.Event;
 import ru.practicum.ewm.event.EventService;
 import ru.practicum.ewm.event.EventState;
 import ru.practicum.ewm.exception.ConflictException;
+import ru.practicum.ewm.exception.ForbiddenException;
 import ru.practicum.ewm.user.User;
 import ru.practicum.ewm.user.UserService;
 
@@ -86,6 +88,42 @@ class RequestServiceImplTest {
 		assertThatThrownBy(() -> requestService.addRequest(2L, 5L))
 				.isInstanceOf(ConflictException.class)
 				.hasMessage("The participant limit has been reached");
+	}
+
+	@Test
+	void duplicateRequestHasBusinessMessage() {
+		User user = user(2L);
+		Event event = event(user(1L), EventState.PUBLISHED, 10, true);
+		when(userService.getById(2L)).thenReturn(user);
+		when(eventService.getEvent(5L)).thenReturn(event);
+		when(requestRepository.existsByEventIdAndRequesterId(5L, 2L)).thenReturn(true);
+
+		assertThatThrownBy(() -> requestService.addRequest(2L, 5L))
+				.isInstanceOf(ConflictException.class)
+				.hasMessage("User already has a participation request for this event");
+	}
+
+	@Test
+	void nonInitiatorCannotReadEventRequests() {
+		when(userService.getById(2L)).thenReturn(user(2L));
+		when(eventService.getEvent(5L)).thenReturn(event(user(1L), EventState.PUBLISHED, 10, true));
+
+		assertThatThrownBy(() -> requestService.getEventRequests(2L, 5L))
+				.isInstanceOf(ForbiddenException.class)
+				.hasMessage("User is not the initiator of the event");
+	}
+
+	@Test
+	void nonInitiatorCannotUpdateRequestStatus() {
+		when(userService.getById(2L)).thenReturn(user(2L));
+		when(eventService.getEvent(5L)).thenReturn(event(user(1L), EventState.PUBLISHED, 10, true));
+		EventRequestStatusUpdateRequest dto = new EventRequestStatusUpdateRequest();
+		dto.setRequestIds(List.of(1L));
+		dto.setStatus(RequestStatus.CONFIRMED);
+
+		assertThatThrownBy(() -> requestService.updateStatus(2L, 5L, dto))
+				.isInstanceOf(ForbiddenException.class)
+				.hasMessage("User is not the initiator of the event");
 	}
 
 	private Event event(User initiator, EventState state, int limit, boolean moderation) {

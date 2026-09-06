@@ -1,11 +1,13 @@
 package ru.practicum.ewm.event;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -92,7 +94,7 @@ public class EventServiceImpl implements EventService {
 		Page<Event> page = eventRepository.findAll(
 				EventSpecifications.adminSearch(users, states, categories, rangeStart, rangeEnd),
 				new OffsetPageRequest(from, size, Sort.by("id").ascending()));
-		return toFullDtos(fetchRelations(page.getContent()));
+		return toFullDtos(page.getContent());
 	}
 
 	@Override
@@ -139,15 +141,11 @@ public class EventServiceImpl implements EventService {
 				text, categories, paid, start, end, onlyAvailable);
 		eventStatsService.hit("/events", ip);
 		if (sort == EventSort.VIEWS) {
-			List<Event> events = fetchRelations(eventRepository.findAll(spec));
-			List<EventShortDto> dtos = toShortDtos(events);
-			dtos.sort(Comparator.comparing(EventShortDto::getViews).reversed());
-			int to = Math.min(from + size, dtos.size());
-			return from >= dtos.size() ? List.of() : dtos.subList(from, to);
+			return getPublicEventsByViews(spec, from, size);
 		}
 		Page<Event> page = eventRepository.findAll(spec,
 				new OffsetPageRequest(from, size, Sort.by("eventDate").ascending()));
-		return toShortDtos(fetchRelations(page.getContent()));
+		return toShortDtos(page.getContent());
 	}
 
 	@Override
@@ -194,19 +192,28 @@ public class EventServiceImpl implements EventService {
 		}
 	}
 
-	private List<Event> fetchRelations(List<Event> events) {
-		if (events.isEmpty()) {
+	private List<EventShortDto> getPublicEventsByViews(Specification<Event> spec, int from, int size) {
+		List<Long> ids = new ArrayList<>(eventRepository.findIds(spec));
+		if (from >= ids.size()) {
 			return List.of();
 		}
-		Map<Long, Event> fetched = eventRepository.findAllWithRelationsByIdIn(
-						events.stream().map(Event::getId).toList())
-				.stream()
+		Map<Long, Long> views = eventStatsService.getViews(ids);
+		ids.sort(Comparator.comparing((Long id) -> views.getOrDefault(id, 0L)).reversed()
+				.thenComparingLong(id -> id));
+		List<Long> pageIds = ids.subList(from, Math.min(from + size, ids.size()));
+		Map<Long, Event> byId = eventRepository.findAllWithRelationsByIdIn(pageIds).stream()
 				.collect(Collectors.toMap(Event::getId, event -> event));
-		return events.stream().map(event -> fetched.getOrDefault(event.getId(), event)).toList();
+		List<Event> events = pageIds.stream()
+				.map(byId::get)
+				.filter(Objects::nonNull)
+				.toList();
+		return toShortDtos(events, views);
 	}
 
 	private EventFullDto toFullDto(Event event) {
-		return toFullDtos(List.of(event)).get(0);
+		long confirmed = requestRepository.countByEventIdAndStatus(event.getId(), RequestStatus.CONFIRMED);
+		long views = eventStatsService.getViews(List.of(event.getId())).getOrDefault(event.getId(), 0L);
+		return EventMapper.toFullDto(event, confirmed, views);
 	}
 
 	private List<EventFullDto> toFullDtos(List<Event> events) {
@@ -222,8 +229,11 @@ public class EventServiceImpl implements EventService {
 
 	@Override
 	public List<EventShortDto> toShortDtos(List<Event> events) {
+		return toShortDtos(events, eventStatsService.getViews(events.stream().map(Event::getId).toList()));
+	}
+
+	private List<EventShortDto> toShortDtos(List<Event> events, Map<Long, Long> views) {
 		Map<Long, Long> confirmed = confirmedCounts(events);
-		Map<Long, Long> views = eventStatsService.getViews(events.stream().map(Event::getId).toList());
 		return events.stream()
 				.map(event -> EventMapper.toShortDto(
 						event,

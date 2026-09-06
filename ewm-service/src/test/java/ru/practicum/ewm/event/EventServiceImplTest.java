@@ -70,7 +70,6 @@ class EventServiceImplTest {
 		Event event = event(EventState.PUBLISHED);
 		when(eventRepository.findByIdWithRelations(5L)).thenReturn(Optional.of(event));
 		when(eventStatsService.getViews(List.of(5L))).thenReturn(Map.of(5L, 9L));
-		when(requestRepository.countByEventIdInAndStatus(any(), any())).thenReturn(List.of());
 
 		EventFullDto dto = eventService.getPublicEvent(5L, "10.0.0.1");
 
@@ -98,6 +97,25 @@ class EventServiceImplTest {
 		assertThatThrownBy(() -> eventService.updateAdminEvent(5L, dto))
 				.isInstanceOf(ForbiddenException.class)
 				.hasMessageContaining("Cannot publish the event");
+	}
+
+	@Test
+	void getPublicEventsSortsByViewsThenLoadsOnlyRequestedPage() {
+		Event high = event(EventState.PUBLISHED);
+		high.setId(2L);
+		Event mid = event(EventState.PUBLISHED);
+		mid.setId(3L);
+		when(eventRepository.findIds(any())).thenReturn(List.of(1L, 2L, 3L));
+		when(eventStatsService.getViews(any())).thenReturn(Map.of(1L, 1L, 2L, 10L, 3L, 5L));
+		when(eventRepository.findAllWithRelationsByIdIn(List.of(2L, 3L))).thenReturn(List.of(mid, high));
+		when(requestRepository.countByEventIdInAndStatus(any(), any())).thenReturn(List.of());
+
+		List<EventShortDto> result = eventService.getPublicEvents(
+				null, null, null, null, null, false, EventSort.VIEWS, 0, 2, "127.0.0.1");
+
+		assertThat(result).extracting(EventShortDto::getId).containsExactly(2L, 3L);
+		verify(eventRepository).findAllWithRelationsByIdIn(List.of(2L, 3L));
+		verify(eventStatsService).hit("/events", "127.0.0.1");
 	}
 
 	private NewEventDto newEventDto(LocalDateTime eventDate) {

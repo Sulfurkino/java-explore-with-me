@@ -10,6 +10,7 @@ import ru.practicum.ewm.event.Event;
 import ru.practicum.ewm.event.EventService;
 import ru.practicum.ewm.event.EventState;
 import ru.practicum.ewm.exception.ConflictException;
+import ru.practicum.ewm.exception.ForbiddenException;
 import ru.practicum.ewm.exception.NotFoundException;
 import ru.practicum.ewm.user.User;
 import ru.practicum.ewm.user.UserService;
@@ -34,8 +35,7 @@ public class RequestServiceImpl implements RequestService {
 			throw new ConflictException(CONDITIONS, "Initiator cannot request participation in own event");
 		}
 		if (requestRepository.existsByEventIdAndRequesterId(eventId, userId)) {
-			throw new ConflictException("could not execute statement; SQL [n/a]; constraint [uq_request]; "
-					+ "nested exception is org.hibernate.exception.ConstraintViolationException: could not execute statement");
+			throw new ConflictException(CONDITIONS, "User already has a participation request for this event");
 		}
 		if (event.getState() != EventState.PUBLISHED) {
 			throw new ConflictException(CONDITIONS, "Cannot participate in an unpublished event");
@@ -76,7 +76,7 @@ public class RequestServiceImpl implements RequestService {
 		userService.getById(userId);
 		Event event = eventService.getEvent(eventId);
 		if (!event.getInitiator().getId().equals(userId)) {
-			throw new NotFoundException("Event with id=" + eventId + " was not found");
+			throw new ForbiddenException("User is not the initiator of the event");
 		}
 		return requestRepository.findAllByEventId(eventId).stream()
 				.map(RequestMapper::toDto)
@@ -90,7 +90,7 @@ public class RequestServiceImpl implements RequestService {
 		userService.getById(userId);
 		Event event = eventService.getEvent(eventId);
 		if (!event.getInitiator().getId().equals(userId)) {
-			throw new NotFoundException("Event with id=" + eventId + " was not found");
+			throw new ForbiddenException("User is not the initiator of the event");
 		}
 		List<ParticipationRequest> requests = requestRepository.findAllByEventIdAndIdIn(eventId, dto.getRequestIds());
 		if (requests.size() != dto.getRequestIds().size()) {
