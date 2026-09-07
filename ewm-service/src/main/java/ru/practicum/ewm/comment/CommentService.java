@@ -16,7 +16,7 @@ public interface CommentService {
 
 	CommentDto getPublished(Long commentId);
 
-	void deleteByAdmin(Long commentId);
+	void deleteComment(Long commentId);
 
 	List<CommentDto> getAdminComments(Long eventId, int from, int size);
 }

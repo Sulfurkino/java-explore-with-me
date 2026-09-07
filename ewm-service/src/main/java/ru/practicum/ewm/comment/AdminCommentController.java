@@ -29,6 +29,6 @@ public class AdminCommentController {
 	@DeleteMapping("/{commentId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void delete(@PathVariable Long commentId) {
-		commentService.deleteByAdmin(commentId);
+		commentService.deleteComment(commentId);
 	}
 }

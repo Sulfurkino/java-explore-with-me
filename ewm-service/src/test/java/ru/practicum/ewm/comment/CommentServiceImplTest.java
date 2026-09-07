@@ -101,16 +101,18 @@ class CommentServiceImplTest {
 		when(eventService.getEvent(5L)).thenReturn(event(EventState.PENDING, user(1L)));
 
 		assertThatThrownBy(() -> commentService.getByEvent(5L, 0, 10))
-				.isInstanceOf(NotFoundException.class);
+				.isInstanceOf(ForbiddenException.class);
 	}
 
 	@Test
-	void getPublishedHidesCommentOfUnpublishedEvent() {
-		Comment comment = comment(9L, user(2L), event(EventState.PENDING, user(1L)));
-		when(commentRepository.findByIdWithRelations(9L)).thenReturn(Optional.of(comment));
+	void getPublishedForbiddenWhenEventUnpublished() {
+		when(commentRepository.findByIdAndEventStateWithRelations(9L, EventState.PUBLISHED))
+				.thenReturn(Optional.empty());
+		when(commentRepository.existsById(9L)).thenReturn(true);
 
 		assertThatThrownBy(() -> commentService.getPublished(9L))
-				.isInstanceOf(NotFoundException.class);
+				.isInstanceOf(ForbiddenException.class)
+				.hasMessage("Cannot get comment of an unpublished event");
 	}
 
 	@Test
@@ -125,20 +127,20 @@ class CommentServiceImplTest {
 	}
 
 	@Test
-	void deleteByAdminRemovesAnyComment() {
+	void deleteCommentRemovesAnyComment() {
 		Comment comment = comment(9L, user(2L), event(EventState.PUBLISHED, user(1L)));
 		when(commentRepository.findByIdWithRelations(9L)).thenReturn(Optional.of(comment));
 
-		commentService.deleteByAdmin(9L);
+		commentService.deleteComment(9L);
 
 		verify(commentRepository).delete(comment);
 	}
 
 	@Test
-	void deleteByAdminNotFound() {
+	void deleteCommentNotFound() {
 		when(commentRepository.findByIdWithRelations(99L)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> commentService.deleteByAdmin(99L))
+		assertThatThrownBy(() -> commentService.deleteComment(99L))
 				.isInstanceOf(NotFoundException.class)
 				.hasMessage("Comment with id=99 was not found");
 	}

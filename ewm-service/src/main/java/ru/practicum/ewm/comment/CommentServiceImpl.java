@@ -65,7 +65,7 @@ public class CommentServiceImpl implements CommentService {
 	@Override
 	public List<CommentDto> getByAuthor(Long userId, int from, int size) {
 		userService.getById(userId);
-		return commentRepository.findAllByAuthorId(userId, new OffsetPageRequest(from, size)).stream()
+		return commentRepository.findAllByAuthorIdWithRelations(userId, new OffsetPageRequest(from, size)).stream()
 				.map(CommentMapper::toDto)
 				.toList();
 	}
@@ -73,23 +73,22 @@ public class CommentServiceImpl implements CommentService {
 	@Override
 	public List<CommentDto> getByEvent(Long eventId, int from, int size) {
 		requirePublishedEvent(eventId);
-		return commentRepository.findAllByEventId(eventId, new OffsetPageRequest(from, size)).stream()
+		return commentRepository.findAllByEventIdAndEventStateWithRelations(
+						eventId, EventState.PUBLISHED, new OffsetPageRequest(from, size)).stream()
 				.map(CommentMapper::toDto)
 				.toList();
 	}
 
 	@Override
 	public CommentDto getPublished(Long commentId) {
-		Comment comment = getComment(commentId);
-		if (comment.getEvent().getState() != EventState.PUBLISHED) {
-			throw new NotFoundException("Comment with id=" + commentId + " was not found");
-		}
-		return CommentMapper.toDto(comment);
+		return commentRepository.findByIdAndEventStateWithRelations(commentId, EventState.PUBLISHED)
+				.map(CommentMapper::toDto)
+				.orElseThrow(() -> unpublishedOrMissing(commentId));
 	}
 
 	@Override
 	@Transactional
-	public void deleteByAdmin(Long commentId) {
+	public void deleteComment(Long commentId) {
 		Comment comment = getComment(commentId);
 		commentRepository.delete(comment);
 	}
@@ -99,7 +98,7 @@ public class CommentServiceImpl implements CommentService {
 		OffsetPageRequest pageable = new OffsetPageRequest(from, size);
 		List<Comment> comments = eventId == null
 				? commentRepository.findAllWithRelations(pageable)
-				: commentRepository.findAllByEventId(eventId, pageable);
+				: commentRepository.findAllByEventIdWithRelations(eventId, pageable);
 		return comments.stream()
 				.map(CommentMapper::toDto)
 				.toList();
@@ -110,10 +109,17 @@ public class CommentServiceImpl implements CommentService {
 				.orElseThrow(() -> new NotFoundException("Comment with id=" + commentId + " was not found"));
 	}
 
+	private RuntimeException unpublishedOrMissing(Long commentId) {
+		if (commentRepository.existsById(commentId)) {
+			return new ForbiddenException("Cannot get comment of an unpublished event");
+		}
+		return new NotFoundException("Comment with id=" + commentId + " was not found");
+	}
+
 	private void requirePublishedEvent(Long eventId) {
 		Event event = eventService.getEvent(eventId);
 		if (event.getState() != EventState.PUBLISHED) {
-			throw new NotFoundException("Event with id=" + eventId + " was not found");
+			throw new ForbiddenException("Cannot get comments of an unpublished event");
 		}
 	}
 
